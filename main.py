@@ -37,9 +37,9 @@ app.add_middleware(
 # Define a function called 'get_connection' that connects to PostgreSQL
 def get_connection():
     return psycopg.connect(   # psycopg.connect() opens a connection to the database
-        dbname="school_db",   # Name of the database
-        user="allano",        # Username
-        password="Allan1997!",# Password
+        dbname="student_info",   # Name of the database
+        user="postgres",        # Username
+        password="EnterYourPassword",# Password
         host="localhost",     # Where the database is running ("localhost" = same computer)
         port="5432"           # Port number for PostgreSQL
     )
