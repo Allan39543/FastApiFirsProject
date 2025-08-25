@@ -1,72 +1,120 @@
-# ------------------ IMPORTS ------------------
+# 📌 Importing necessary libraries and modules
 
-# 'from ... import ...' means: bring something specific from a library
-from fastapi import FastAPI                      # FastAPI framework for building APIs
-from fastapi.middleware.cors import CORSMiddleware  # Middleware to handle CORS
-import psycopg                                   # Library for connecting to PostgreSQL databases
+from fastapi import FastAPI, HTTPException
+# FastAPI → the main framework we are using to build APIs (like a web service).
+# HTTPException → used to send back an error response if something goes wrong
+# (example: if database fails, we return a "500 error" message).
 
+from fastapi.middleware.cors import CORSMiddleware
+# CORS (Cross-Origin Resource Sharing) → a rule that controls
+# which websites can access your backend API.
+# Example: your frontend (HTML/JS) running at http://127.0.0.1:5500
+# should be allowed to call this FastAPI backend.
 
-# ------------------ CREATE APP ------------------
+from pydantic import BaseModel
+# Pydantic → helps us define and check the structure of incoming data.
+# Example: when we add a new student, we expect their details in a specific format.
+# BaseModel lets us enforce this structure.
 
-# 'app = FastAPI()' creates an API application object
-# This object is our "server" where we will define routes (endpoints)
+import psycopg
+# psycopg → library to connect Python with PostgreSQL database.
+# It allows us to run SQL queries like SELECT, INSERT, UPDATE, DELETE.
+
+# ---------------------------------------------------------------
+
+# 📌 Create an instance of FastAPI
 app = FastAPI()
+# 'app' is the main application object that will hold all our routes (endpoints).
 
+# ---------------------------------------------------------------
 
-# ------------------ CORS SETUP ------------------
+# 📌 Allow specific frontend origins (websites) to access the API
+origins = ["http://127.0.0.1:5500"]
+# This means: only requests coming from this address will be allowed to talk
+# to our backend (important for security).
 
-# 'origins' is a Python list [] containing allowed frontend addresses
-# Only these addresses can send requests to this API
-origins = [
-    "http://127.0.0.1:5500"   # local frontend (e.g., HTML/JS running in browser)
-]
-
-# Add CORS middleware to the app
-# Middleware = software that sits between the app and the user requests
+# Add CORS settings to our FastAPI app
 app.add_middleware(
-    CORSMiddleware,           # The middleware class we are adding
-    allow_origins=origins,    # Only allow requests from the given origins list
-    allow_credentials=True,   # Allow cookies, tokens, or login info to be sent
-    allow_methods=["*"],      # "*" means all HTTP methods are allowed (GET, POST, PUT, DELETE...)
-    allow_headers=["*"],      # "*" means allow any headers (extra request info)
+    CORSMiddleware,                # Attach CORS middleware
+    allow_origins=origins,         # Allow only the frontend running on 127.0.0.1:5500
+    allow_credentials=True,        # Allow cookies/authentication info to be shared
+    allow_methods=["*"],           # Allow all HTTP methods (GET, POST, PUT, DELETE, etc.)
+    allow_headers=["*"],           # Allow all headers in the request
 )
 
+# ---------------------------------------------------------------
 
-# ------------------ DATABASE CONNECTION ------------------
-
-# Define a function called 'get_connection' that connects to PostgreSQL
+# ✅ Function to connect to the PostgreSQL database
 def get_connection():
-    return psycopg.connect(   # psycopg.connect() opens a connection to the database
-        dbname="student_info",   # Name of the database
-        user="postgres",        # Username
-        password="EnterYourPassword",# Password
-        host="localhost",     # Where the database is running ("localhost" = same computer)
-        port="5432"           # Port number for PostgreSQL
+    return psycopg.connect(
+        dbname="school_db",         # Database name (must exist in PostgreSQL)
+        user="allano",              # Database username
+        password="Allan1997!",      # Database password (⚠️ should be kept secret)
+        host="localhost",           # Database server (localhost = running on same computer)
+        port="5432"                 # Default PostgreSQL port
     )
 
+# ---------------------------------------------------------------
 
-# ------------------ ROUTES ------------------
+# ✅ Define a Student model using Pydantic
+class Student(BaseModel):
+    name: str              # Student's full name
+    admission_number: str  # Admission/registration number
+    class_name: str        # Class name (we use class_name because 'class' is a reserved word in Python)
+    stream: str            # Stream (like North, South, East, West)
 
-# A "route" is a URL path where people can access your API
+# ---------------------------------------------------------------
 
-# -------- Home Route --------
-@app.get("/")   # '@app.get("/")' means: when someone visits "/" using GET method, run the function below
-def home():     # Function name is 'home'
-    # return sends a response in JSON format (dictionary in Python automatically becomes JSON)
-    return {"message": "Welcome to the Student API"}
+# 📌 Route: GET /students → Fetch all students
+@app.get("/students")
+def get_students():
+    try:
+        # Step 1: Open a connection to the database
+        with get_connection() as conn:
+            # Step 2: Create a cursor to interact with the database
+            # row_factory=psycopg.rows.dict_row → returns results as dictionaries (easy to work with)
+            with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+                # Step 3: Run a SQL query to get all students
+                cur.execute("SELECT * FROM students;")
+                # Step 4: Fetch all rows from the result
+                rows = cur.fetchall()
+                # Step 5: Convert each row into a dictionary
+                students = [dict(row) for row in rows]
 
+        # Step 6: Return the students as JSON to the frontend
+        return {"students": students}
 
-# -------- Get Students Route --------
-@app.get("/students")   # When someone visits "/students" with GET method, run this function
-def get_students():     # Function name is 'get_students'
-    # 'with' automatically handles opening and closing the database connection
-    with get_connection() as conn:   # Open a connection to the database
-        # Open a cursor (tool to run SQL commands)
-        # row_factory=psycopg.rows.dict_row makes rows look like dictionaries
-        with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
-            # Run an SQL command
-            cur.execute("SELECT * FROM students;")
-            # Fetch all rows from the result
-            students = cur.fetchall()
-    # Send the result back as JSON
-    return {"students": students}
+    except Exception as e:
+        # If something goes wrong (e.g., database error), return a 500 error
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+# ---------------------------------------------------------------
+
+# 📌 Route: POST /students → Add a new student
+@app.post("/students")
+def add_student(student: Student):  # The "student" parameter automatically checks input using our Student model
+    try:
+        # Step 1: Open a connection to the database
+        with get_connection() as conn:
+            # Step 2: Create a cursor
+            with conn.cursor() as cur:
+                # Step 3: Run an INSERT query to add the student
+                cur.execute(
+                    """
+                    INSERT INTO students (name, admission_number, class, stream)
+                    VALUES (%s, %s, %s, %s)
+                    RETURNING id;
+                    """,
+                    (student.name, student.admission_number, student.class_name, student.stream)
+                )
+                # Step 4: Fetch the ID of the newly added student
+                new_id = cur.fetchone()[0]
+                # Step 5: Save (commit) changes to the database
+                conn.commit()
+
+        # Step 6: Return a success message with the new student ID
+        return {"message": "Student added successfully", "id": new_id}
+
+    except Exception as e:
+        # If something goes wrong, return an error message
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
